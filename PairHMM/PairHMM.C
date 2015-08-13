@@ -2,7 +2,7 @@
  PairHMM.C
  william.majoros@duke.edu
 
- This is open-source software, governed by the ARTISTIC LICENSE 
+ This is open-source software, governed by the Gnu General Public License (GPL) version 3 
  (see www.opensource.org).
  ****************************************************************/
 #include <iostream>
