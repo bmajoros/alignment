@@ -1,0 +1,149 @@
+; Include some files
+(load "../../affine.lambda")
+(load "../../reversible.lambda")
+(load "../../pachter-affine.lambda")
+(load "../../atom.lambda") 
+(define 'fet [a b c d e|(functional-element-type a b (load-rate-matrices c e) d)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(load "TLL-parms.lambda")
+(define 'epsilon 0.00001) ; transition to stop state
+;(define 'alpha (* alpha 1.0)) ; 0.8 is best
+;(define 'beta (* beta 1.0))    ; 0.8 is best
+(define 'site-factor 0.9) ; rescales the substitution rate within TFBS's
+(define 'background-factor 1.8) ; rescales subst rate in the background
+(define 'tree-factor 0.3) ; for scaling branch lengths
+
+(print "alpha=")(print alpha)(print "\n")
+(print "beta=")(print beta)(print "\n")
+(print "lambda=")(print lambda)(print "\n")
+(print "mu=")(print mu)(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "nj.phy"))
+(scale-tree phy tree-factor)
+(define 'bg (background
+   (load-rate-matrix "background.matrix" background-factor)
+   phy "." "background"))
+(define 'fTLL (fet "tll" "T" "tll.ratmat" phy site-factor))
+(define 'fTLLrev (fet "-tll" "t" "tll-rev.ratmat" phy site-factor))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define spacer submodel
+(define 'spacer (reversible alpha beta lambda mu bg))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define models for gain, loss, and retention
+(define 'TLL-rev (binding-site fTLLrev))
+(define 'TLL (binding-site fTLL))
+(define 'TLL-rev-gain (gain-of-function spacer fTLLrev))
+(define 'TLL-gain (gain-of-function spacer fTLL))
+(define 'TLL-rev-loss (loss-of-function spacer fTLLrev))
+(define 'TLL-loss (loss-of-function spacer fTLL))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; pT(t) = probability of survival across interval of length t
+(define 'pT
+  [t lambda mu|
+    (* (bINF lambda mu) (+ 1 (* (/ mu lambda) (eT (+ mu lambda) t))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; qT(t) = probability of NOT surviving across interval of length t
+(define 'qT
+  [t lambda mu|
+    (- 1 (pT t lambda mu))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; retainP(t) = probability of going into a retention submodel
+(define 'retainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (pT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.5 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; gainP(t) = probability of going into the gain submodel
+(define 'gainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (- 1 (bINF lambda mu))) (bT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; lossP(t) = probability of going into the loss submodel
+(define 'lossP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (qT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Combine the gain/loss/retain/spacer submodels into a macrostate topology
+(define 'parser
+  [lambda mu| ; model parameters
+    ([SPACER TLL rTLL TLL-GAIN rTLL-GAIN TLL-LOSS rTLL-LOSS |
+       (compose
+         (macrostates SPACER TLL rTLL TLL-GAIN rTLL-GAIN TLL-LOSS rTLL-LOSS)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|epsilon])
+         (macrotrans SPACER TLL [t|(retainP t lambda mu)])
+         (macrotrans SPACER rTLL [t|(retainP t lambda mu)])
+         (macrotrans SPACER TLL-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER rTLL-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER TLL-LOSS [t|(lossP t lambda mu)])
+         (macrotrans SPACER rTLL-LOSS [t|(lossP t lambda mu)])
+         (macrotrans TLL SPACER [t|1])
+         (macrotrans rTLL SPACER [t|1])
+         (macrotrans TLL-GAIN SPACER [t|1])
+         (macrotrans rTLL-GAIN SPACER [t|1])
+         (macrotrans TLL-LOSS SPACER [t|1])
+         (macrotrans rTLL-LOSS SPACER [t|1])
+
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         ;(retention-factor [t|(pT t lambda mu)])   ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+     (macrostate 2 TLL)
+     (macrostate 3 TLL-rev)
+     (macrostate 4 TLL-gain)
+     (macrostate 5 TLL-rev-gain)
+     (macrostate 6 TLL-loss)
+     (macrostate 7 TLL-rev-loss)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-transducer (parser lambda mu))
+
+  

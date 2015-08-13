@@ -1,0 +1,93 @@
+;====================================================================
+; A reversible affine model for spacer regions between binding sites
+; W.H. Majoros
+;====================================================================
+
+; eT(x,t) = e^(-x*t)
+(define 'eT [x t| (exp (- 0 (* x t))) ] )
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; emT(x,t) = 1-e^(-x*t)
+(define 'emT [x t| (- 1 (eT x t)) ] )
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; bINF = lim of b(t) as t->inf
+;   lambda = instantaneous birth rate
+;   mu = instantaneous death rate
+(define 'bINF [lambda mu|(/ (float lambda) (+ lambda mu))]) 
+;(define 'bINF [|(float density)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; bT(t) = binding-site "birth" probability over interval t
+;   t = interval length
+;   lambda = instantaneous birth rate
+;   mu = instantaneous death rate
+(define 'bT
+  [t lambda mu|
+    (* (bINF lambda mu) 
+      (emT (+ lambda mu) t)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; stop(t) = probability of going to stop state
+(define 'stop 
+  [t lambda mu|
+    (- 1 (* (- 1 (bINF lambda mu)) (- 1 (bT t lambda mu))))
+
+    ;(print "density=")(print density)(print "\n")
+    ;(- 1 (* (- 1 density) (- 1 (bT t lambda mu))))
+
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; nonstop(t,x) = x*(1-stop(t))
+(define 'nonstop
+  [t lambda mu x|
+    (* x (- 1 (stop t lambda mu))) 
+  ] 
+)
+
+;====================================================================
+; reversible(alpha,beta,L,mu,fc) builds the reversible affine model:
+;   alpha = tendency to stay in match state
+;   beta = tendency to stay in insert/delete state
+;   L ("lambda") = instantaneous birth rate for binding sites
+;   mu = intantaneous death rate for binding sites
+;   fc = functional class (background)
+(define 'reversible
+  [alpha beta L mu fc| ; model parameters
+    ([M I D|    ; states
+       (transducer
+         (states M I D)
+         (transition start-state I [t|(/ (emT alpha t) 2)])
+         (transition start-state D [t|(/ (emT alpha t) 2)])
+         (transition start-state M [t|(eT alpha t)])
+         (transition M M [t|(nonstop t L mu (eT alpha t))])
+         (transition M I [t|(nonstop t L mu (/ (emT alpha t) 2))])
+         (transition M D [t|(nonstop t L mu (/ (emT alpha t) 2))])
+         (transition M end-state [t|(stop t L mu)])
+         (transition I I [t|(nonstop t L mu (emT beta t))])
+         (transition I M [t|(nonstop t L mu (* (eT beta t) (eT alpha t)))])
+         (transition I D [t|(nonstop t L mu (* (eT beta t) (emT alpha t)))])
+         (transition I end-state [t|(stop t L mu)])
+         (transition D D [t|(nonstop t L mu (emT beta t))])
+         (transition D M [t|(nonstop t L mu (* (eT beta t) (eT alpha t)))])
+         (transition D I [t|(nonstop t L mu (* (eT beta t) (emT alpha t)))])
+         (transition D end-state [t|(stop t L mu)])
+       )
+     ]
+     (state 1 MATCH fc) ; M
+     (state 2 INSERT fc) ; I
+     (state 3 DELETE fc) ; D
+    )
+  ]
+)
+

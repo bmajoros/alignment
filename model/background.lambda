@@ -1,0 +1,200 @@
+
+; Include some files
+(load "../../affine.lambda")
+(load "../../reversible.lambda")
+(load "../../pachter-affine.lambda")
+(load "../../atom.lambda") 
+(define 'fet [a b c d|(functional-element-type a b (load-rate-matrices c) d)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(load "parms.lambda")
+(define 'epsilon 0.00001) ; transition to stop state
+
+(print "alpha=")(print alpha)(print "\n")
+(print "beta=")(print beta)(print "\n")
+(print "lambda=")(print lambda)(print "\n")
+(print "mu=")(print mu)(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "background.phy"))
+(define 'bg (background 
+   (load-rate-matrix "background.matrix") phy "." "background"))
+(define 'fBCDrev (fet "-bcd" "b" "bcd-rev.ratmat" phy))
+(define 'fCADrev (fet "-cad" "c" "cad-rev.ratmat" phy))
+(define 'fGTrev  (fet "-gt"  "g" "gt-rev.ratmat"  phy))
+(define 'fHBrev  (fet "-hb"  "h" "hb-rev.ratmat"  phy))
+(define 'fKNIrev (fet "-kni" "k" "kni-rev.ratmat" phy))
+(define 'fKRrev  (fet "-Kr"  "r" "Kr-rev.ratmat"  phy))
+(define 'fTLLrev (fet "-tll" "t" "tll-rev.ratmat" phy))
+(define 'fBCD (fet "bcd" "B" "bcd.ratmat" phy))
+(define 'fCAD (fet "cad" "C" "cad.ratmat" phy))
+(define 'fGT  (fet "gt"  "G" "gt.ratmat"  phy))
+(define 'fHB  (fet "hb"  "H" "hb.ratmat"  phy))
+(define 'fKNI (fet "kni" "K" "kni.ratmat" phy))
+(define 'fKR  (fet "Kr"  "R" "Kr.ratmat"  phy))
+(define 'fTLL (fet "tll" "T" "tll.ratmat" phy))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define spacer submodel
+(define 'spacer (reversible alpha beta lambda mu bg))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define models for gain, loss, and retention
+;; (define 'retain (binding-site fE2F))
+;; (define 'gain (gain-of-function spacer fE2F))
+;; (define 'loss (loss-of-function spacer fE2F))
+(define 'bcd-rev (binding-site fBCDrev))
+(define 'cad-rev (binding-site fCADrev))
+(define 'gt-rev (binding-site fGTrev))
+(define 'hb-rev (binding-site fHBrev))
+(define 'kni-rev (binding-site fKNIrev))
+(define 'Kr-rev (binding-site fKRrev))
+(define 'tll-rev (binding-site fTLLrev))
+(define 'bcd (binding-site fBCD))
+(define 'cad (binding-site fCAD))
+(define 'gt (binding-site fGT))
+(define 'hb (binding-site fHB))
+(define 'kni (binding-site fKNI))
+(define 'Kr (binding-site fKR))
+(define 'tll (binding-site fTLL))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; pT(t) = probability of survival across interval of length t
+(define 'pT
+  [t lambda mu|
+    (* (bINF lambda mu) (+ 1 (* (/ mu lambda) (eT (+ mu lambda) t))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; qT(t) = probability of NOT surviving across interval of length t
+(define 'qT
+  [t lambda mu|
+    (- 1 (pT t lambda mu))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; retainP(t) = probability of going into a retention submodel
+(define 'retainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (pT t lambda mu))
+       (* 14 (stop t lambda mu))
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; ### DEBUGGING:
+;(print "bINF=")(print (bINF lambda mu))(print "\n")
+;(print "epsilon=")(print epsilon)(print "\n")
+;(print "retainP=")(print (retainP 0.339 lambda mu))(print "\n")
+;(print "gainP=")(print (gainP 0.339 lambda mu))(print "\n")
+;(print "lossP=")(print (lossP 0.339 lambda mu))(print "\n")
+;(print "p(t)=")(print (pT 0.339 lambda mu))(print "\n")
+;(print "q(t)=")(print (qT 0.339 lambda mu))(print "\n")
+;(print "b(t)=")(print (bT 0.339 lambda mu))(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Combine the gain/loss/retain/spacer submodels into a macrostate topology
+(define 'parser
+  [lambda mu| ; model parameters
+    ([SPACER BCD CAD GT HB KNI DR TLL rBCD rCAD rGT rHB rKNI rDR rTLL |
+       (compose
+         (macrostates SPACER BCD CAD GT HB KNI DR TLL 
+                            rBCD rCAD rGT rHB rKNI rDR rTLL)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|epsilon])
+         (macrotrans SPACER BCD [t|(retainP t lambda mu)])
+         (macrotrans SPACER CAD [t|(retainP t lambda mu)])
+         (macrotrans SPACER GT [t|(retainP t lambda mu)])
+         (macrotrans SPACER HB [t|(retainP t lambda mu)])
+         (macrotrans SPACER KNI [t|(retainP t lambda mu)])
+         (macrotrans SPACER DR [t|(retainP t lambda mu)])
+         (macrotrans SPACER TLL [t|(retainP t lambda mu)])
+         (macrotrans SPACER rBCD [t|(retainP t lambda mu)])
+         (macrotrans SPACER rCAD [t|(retainP t lambda mu)])
+         (macrotrans SPACER rGT [t|(retainP t lambda mu)])
+         (macrotrans SPACER rHB [t|(retainP t lambda mu)])
+         (macrotrans SPACER rKNI [t|(retainP t lambda mu)])
+         (macrotrans SPACER rDR [t|(retainP t lambda mu)])
+         (macrotrans SPACER rTLL [t|(retainP t lambda mu)])
+         (macrotrans BCD SPACER [t|1])
+         (macrotrans CAD SPACER [t|1])
+         (macrotrans GT SPACER [t|1])
+         (macrotrans HB SPACER [t|1])
+         (macrotrans KNI SPACER [t|1])
+         (macrotrans DR SPACER [t|1])
+         (macrotrans TLL SPACER [t|1])
+         (macrotrans rBCD SPACER [t|1])
+         (macrotrans rCAD SPACER [t|1])
+         (macrotrans rGT SPACER [t|1])
+         (macrotrans rHB SPACER [t|1])
+         (macrotrans rKNI SPACER [t|1])
+         (macrotrans rDR SPACER [t|1])
+         (macrotrans rTLL SPACER [t|1])
+
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         ;(retention-factor [t|(pT t lambda mu)])   ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+     (macrostate 2 bcd)
+     (macrostate 3 cad)
+     (macrostate 4 gt)
+     (macrostate 5 hb)
+     (macrostate 6 kni)
+     (macrostate 7 Kr)
+     (macrostate 8 tll)
+     (macrostate 9 bcd-rev)
+     (macrostate 10 cad-rev)
+     (macrostate 11 gt-rev)
+     (macrostate 12 hb-rev)
+     (macrostate 13 kni-rev)
+     (macrostate 14 Kr-rev)
+     (macrostate 15 tll-rev)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Build a macrostate version of the background model
+(define 'background-parser
+  [spacer lambda mu| ; model parameters
+    ([SPACER |
+       (compose
+         (macrostates SPACER)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|1])
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-transducer (background-parser spacer lambda mu))
+(register-transducer (parser lambda mu))
+
+
+

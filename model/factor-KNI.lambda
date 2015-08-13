@@ -1,0 +1,149 @@
+; Include some files
+(load "../../affine.lambda")
+(load "../../reversible.lambda")
+(load "../../pachter-affine.lambda")
+(load "../../atom.lambda") 
+(define 'fet [a b c d e|(functional-element-type a b (load-rate-matrices c e) d)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(load "KNI-parms.lambda")
+(define 'epsilon 0.00001) ; transition to stop state
+;(define 'alpha (* alpha 1.0)) ; 0.8 is best
+;(define 'beta (* beta 1.0))    ; 0.8 is best
+(define 'site-factor 0.9) ; rescales the substitution rate within TFBS's
+(define 'background-factor 1.8) ; rescales subst rate in the background
+(define 'tree-factor 0.3) ; for scaling branch lengths
+
+(print "alpha=")(print alpha)(print "\n")
+(print "beta=")(print beta)(print "\n")
+(print "lambda=")(print lambda)(print "\n")
+(print "mu=")(print mu)(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "nj.phy"))
+(scale-tree phy tree-factor)
+(define 'bg (background
+   (load-rate-matrix "background.matrix" background-factor)
+   phy "." "background"))
+(define 'fKNI (fet "kni" "K" "kni.ratmat" phy site-factor))
+(define 'fKNIrev (fet "-kni" "k" "kni-rev.ratmat" phy site-factor))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define spacer submodel
+(define 'spacer (reversible alpha beta lambda mu bg))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define models for gain, loss, and retention
+(define 'KNI-rev (binding-site fKNIrev))
+(define 'KNI (binding-site fKNI))
+(define 'KNI-rev-gain (gain-of-function spacer fKNIrev))
+(define 'KNI-gain (gain-of-function spacer fKNI))
+(define 'KNI-rev-loss (loss-of-function spacer fKNIrev))
+(define 'KNI-loss (loss-of-function spacer fKNI))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; pT(t) = probability of survival across interval of length t
+(define 'pT
+  [t lambda mu|
+    (* (bINF lambda mu) (+ 1 (* (/ mu lambda) (eT (+ mu lambda) t))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; qT(t) = probability of NOT surviving across interval of length t
+(define 'qT
+  [t lambda mu|
+    (- 1 (pT t lambda mu))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; retainP(t) = probability of going into a retention submodel
+(define 'retainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (pT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.5 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; gainP(t) = probability of going into the gain submodel
+(define 'gainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (- 1 (bINF lambda mu))) (bT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; lossP(t) = probability of going into the loss submodel
+(define 'lossP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (qT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Combine the gain/loss/retain/spacer submodels into a macrostate topology
+(define 'parser
+  [lambda mu| ; model parameters
+    ([SPACER KNI rKNI KNI-GAIN rKNI-GAIN KNI-LOSS rKNI-LOSS |
+       (compose
+         (macrostates SPACER KNI rKNI KNI-GAIN rKNI-GAIN KNI-LOSS rKNI-LOSS)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|epsilon])
+         (macrotrans SPACER KNI [t|(retainP t lambda mu)])
+         (macrotrans SPACER rKNI [t|(retainP t lambda mu)])
+         (macrotrans SPACER KNI-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER rKNI-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER KNI-LOSS [t|(lossP t lambda mu)])
+         (macrotrans SPACER rKNI-LOSS [t|(lossP t lambda mu)])
+         (macrotrans KNI SPACER [t|1])
+         (macrotrans rKNI SPACER [t|1])
+         (macrotrans KNI-GAIN SPACER [t|1])
+         (macrotrans rKNI-GAIN SPACER [t|1])
+         (macrotrans KNI-LOSS SPACER [t|1])
+         (macrotrans rKNI-LOSS SPACER [t|1])
+
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         ;(retention-factor [t|(pT t lambda mu)])   ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+     (macrostate 2 KNI)
+     (macrostate 3 KNI-rev)
+     (macrostate 4 KNI-gain)
+     (macrostate 5 KNI-rev-gain)
+     (macrostate 6 KNI-loss)
+     (macrostate 7 KNI-rev-loss)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-transducer (parser lambda mu))
+
+  

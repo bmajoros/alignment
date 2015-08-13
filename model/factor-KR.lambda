@@ -1,0 +1,149 @@
+; Include some files
+(load "../../affine.lambda")
+(load "../../reversible.lambda")
+(load "../../pachter-affine.lambda")
+(load "../../atom.lambda") 
+(define 'fet [a b c d e|(functional-element-type a b (load-rate-matrices c e) d)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(load "KR-parms.lambda")
+(define 'epsilon 0.00001) ; transition to stop state
+;(define 'alpha (* alpha 1.0)) ; 0.8 is best
+;(define 'beta (* beta 1.0))    ; 0.8 is best
+(define 'site-factor 0.9) ; rescales the substitution rate within TFBS's
+(define 'background-factor 1.8) ; rescales subst rate in the background
+(define 'tree-factor 0.3) ; for scaling branch lengths
+
+(print "alpha=")(print alpha)(print "\n")
+(print "beta=")(print beta)(print "\n")
+(print "lambda=")(print lambda)(print "\n")
+(print "mu=")(print mu)(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "nj.phy"))
+(scale-tree phy tree-factor)
+(define 'bg (background
+   (load-rate-matrix "background.matrix" background-factor)
+   phy "." "background"))
+(define 'fKR (fet "Kr" "R" "Kr.ratmat" phy site-factor))
+(define 'fKRrev (fet "-Kr" "r" "Kr-rev.ratmat" phy site-factor))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define spacer submodel
+(define 'spacer (reversible alpha beta lambda mu bg))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define models for gain, loss, and retention
+(define 'KR-rev (binding-site fKRrev))
+(define 'KR (binding-site fKR))
+(define 'KR-rev-gain (gain-of-function spacer fKRrev))
+(define 'KR-gain (gain-of-function spacer fKR))
+(define 'KR-rev-loss (loss-of-function spacer fKRrev))
+(define 'KR-loss (loss-of-function spacer fKR))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; pT(t) = probability of survival across interval of length t
+(define 'pT
+  [t lambda mu|
+    (* (bINF lambda mu) (+ 1 (* (/ mu lambda) (eT (+ mu lambda) t))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; qT(t) = probability of NOT surviving across interval of length t
+(define 'qT
+  [t lambda mu|
+    (- 1 (pT t lambda mu))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; retainP(t) = probability of going into a retention submodel
+(define 'retainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (pT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.5 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; gainP(t) = probability of going into the gain submodel
+(define 'gainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (- 1 (bINF lambda mu))) (bT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; lossP(t) = probability of going into the loss submodel
+(define 'lossP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (qT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Combine the gain/loss/retain/spacer submodels into a macrostate topology
+(define 'parser
+  [lambda mu| ; model parameters
+    ([SPACER KR rKR KR-GAIN rKR-GAIN KR-LOSS rKR-LOSS |
+       (compose
+         (macrostates SPACER KR rKR KR-GAIN rKR-GAIN KR-LOSS rKR-LOSS)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|epsilon])
+         (macrotrans SPACER KR [t|(retainP t lambda mu)])
+         (macrotrans SPACER rKR [t|(retainP t lambda mu)])
+         (macrotrans SPACER KR-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER rKR-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER KR-LOSS [t|(lossP t lambda mu)])
+         (macrotrans SPACER rKR-LOSS [t|(lossP t lambda mu)])
+         (macrotrans KR SPACER [t|1])
+         (macrotrans rKR SPACER [t|1])
+         (macrotrans KR-GAIN SPACER [t|1])
+         (macrotrans rKR-GAIN SPACER [t|1])
+         (macrotrans KR-LOSS SPACER [t|1])
+         (macrotrans rKR-LOSS SPACER [t|1])
+
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         ;(retention-factor [t|(pT t lambda mu)])   ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+     (macrostate 2 KR)
+     (macrostate 3 KR-rev)
+     (macrostate 4 KR-gain)
+     (macrostate 5 KR-rev-gain)
+     (macrostate 6 KR-loss)
+     (macrostate 7 KR-rev-loss)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-transducer (parser lambda mu))
+
+  

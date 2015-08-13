@@ -1,0 +1,44 @@
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(load "parms.original")
+(load "coef-trained.lambda")
+(load "../../reversible.lambda")
+(define 'epsilon 0.00001) ; transition to stop state
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "trained-rerooted.phy"))
+(scale-tree phy tree-factor)
+(define 'bg (background 
+   (load-rate-matrix "trained.matrix" background-factor) 
+   phy "." "background"))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Build a macrostate version of the background model
+(define 'UPHMM
+  [| ; model parameters
+    ([SPACER |
+       (compose
+         (macrostates SPACER)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|1])
+       )
+     ]
+     (macrostate 1 (reversible alpha beta lambda mu bg))
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-constructor UPHMM)
+;(register-transducer (UPHMM))
+
+
+
+

@@ -1,0 +1,317 @@
+
+; Include some files
+(define 'fet [a b c d e|
+  (functional-element-type a b (load-rate-matrices c e) d)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(define 'epsilon 0.00001) ; transition to stop state
+(load "parms.lambda")
+(load "coef10-trained.lambda")
+(load "../../reversible.lambda")
+
+(print "alpha=")(print alpha)(print "\n")
+(print "beta=")(print beta)(print "\n")
+(print "lambda=")(print lambda)(print "\n")
+(print "mu=")(print mu)(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "10way-unrooted.phy"))
+(scale-tree phy tree-factor)
+(define 'bg (background 
+   (load-rate-matrix "10way-trained.matrix" background-factor) 
+   phy "." "background"))
+(define 'fBCDrev (fet "-bcd" "b" "bcd-rev.ratmat" phy site-factor))
+(define 'fCADrev (fet "-cad" "c" "cad-rev.ratmat" phy site-factor))
+(define 'fGTrev  (fet "-gt"  "g" "gt-rev.ratmat"  phy site-factor))
+(define 'fHBrev  (fet "-hb"  "h" "hb-rev.ratmat"  phy site-factor))
+(define 'fKNIrev (fet "-kni" "k" "kni-rev.ratmat" phy site-factor))
+(define 'fKRrev  (fet "-Kr"  "r" "Kr-rev.ratmat"  phy site-factor))
+(define 'fTLLrev (fet "-tll" "t" "tll-rev.ratmat" phy site-factor))
+(define 'fBCD (fet "bcd" "B" "bcd.ratmat" phy site-factor))
+(define 'fCAD (fet "cad" "C" "cad.ratmat" phy site-factor))
+(define 'fGT  (fet "gt"  "G" "gt.ratmat"  phy site-factor))
+(define 'fHB  (fet "hb"  "H" "hb.ratmat"  phy site-factor))
+(define 'fKNI (fet "kni" "K" "kni.ratmat" phy site-factor))
+(define 'fKR  (fet "Kr"  "R" "Kr.ratmat"  phy site-factor))
+(define 'fTLL (fet "tll" "T" "tll.ratmat" phy site-factor))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define spacer submodel
+(define 'spacer (reversible alpha beta lambda mu bg))
+;(define 'spacer (TKF 3.0 6.0 bg))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define models for gain, loss, and retention
+(define 'bcd-rev (binding-site fBCDrev))
+(define 'cad-rev (binding-site fCADrev))
+(define 'gt-rev (binding-site fGTrev))
+(define 'hb-rev (binding-site fHBrev))
+(define 'kni-rev (binding-site fKNIrev))
+(define 'Kr-rev (binding-site fKRrev))
+(define 'tll-rev (binding-site fTLLrev))
+(define 'bcd (binding-site fBCD))
+(define 'cad (binding-site fCAD))
+(define 'gt (binding-site fGT))
+(define 'hb (binding-site fHB))
+(define 'kni (binding-site fKNI))
+(define 'Kr (binding-site fKR))
+(define 'tll (binding-site fTLL))
+(define 'bcd-rev-gain (full-gain-model spacer fBCDrev))
+(define 'cad-rev-gain (full-gain-model spacer fCADrev))
+(define 'gt-rev-gain (full-gain-model spacer fGTrev))
+(define 'hb-rev-gain (full-gain-model spacer fHBrev))
+(define 'kni-rev-gain (full-gain-model spacer fKNIrev))
+(define 'Kr-rev-gain (full-gain-model spacer fKRrev))
+(define 'tll-rev-gain (full-gain-model spacer fTLLrev))
+(define 'bcd-gain (full-gain-model spacer fBCD))
+(define 'cad-gain (full-gain-model spacer fCAD))
+(define 'gt-gain (full-gain-model spacer fGT))
+(define 'hb-gain (full-gain-model spacer fHB))
+(define 'kni-gain (full-gain-model spacer fKNI))
+(define 'Kr-gain (full-gain-model spacer fKR))
+(define 'tll-gain (full-gain-model spacer fTLL))
+(define 'bcd-rev-loss (full-loss-model spacer fBCDrev))
+(define 'cad-rev-loss (full-loss-model spacer fCADrev))
+(define 'gt-rev-loss (full-loss-model spacer fGTrev))
+(define 'hb-rev-loss (full-loss-model spacer fHBrev))
+(define 'kni-rev-loss (full-loss-model spacer fKNIrev))
+(define 'Kr-rev-loss (full-loss-model spacer fKRrev))
+(define 'tll-rev-loss (full-loss-model spacer fTLLrev))
+(define 'bcd-loss (full-loss-model spacer fBCD))
+(define 'cad-loss (full-loss-model spacer fCAD))
+(define 'gt-loss (full-loss-model spacer fGT))
+(define 'hb-loss (full-loss-model spacer fHB))
+(define 'kni-loss (full-loss-model spacer fKNI))
+(define 'Kr-loss (full-loss-model spacer fKR))
+(define 'tll-loss (full-loss-model spacer fTLL))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+(define 'bINF [lambda mu|(/ (float lambda) (+ lambda mu))]) 
+
+; pT(t) = probability of survival across interval of length t
+(define 'pT
+  [t lambda mu|
+    (* (bINF lambda mu) (+ 1 (* (/ mu lambda) (eT (+ mu lambda) t))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; qT(t) = probability of NOT surviving across interval of length t
+(define 'qT
+  [t lambda mu|
+    (- 1 (pT t lambda mu))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; retainP(t) = probability of going into a retention submodel
+(define 'retainP
+  [t lambda mu ratio|
+    (/ (* ratio (* (* (- 1 epsilon) (bINF lambda mu)) (pT t lambda mu)))
+       (* 2 (stop t lambda mu))
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; gainP(t) = probability of going into the gain submodel
+(define 'gainP
+  [t lambda mu ratio|
+
+;(* 3.0 ; ###
+
+    (/ (* ratio (* (* (- 1 epsilon) (- 1 (bINF lambda mu))) (bT t lambda mu)))
+       (* 2 (stop t lambda mu))
+    )
+
+;) ; ###
+
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; lossP(t) = probability of going into the loss submodel
+(define 'lossP
+  [t lambda mu ratio|
+    (/ (* ratio (* (* (- 1 epsilon) (bINF lambda mu)) (qT t lambda mu)))
+       (* 2 (stop t lambda mu))
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Combine the gain/loss/retain/spacer submodels into a macrostate topology
+(define 'parser
+  [lambda mu| ; model parameters
+    ([SPACER BCD CAD GT HB KNI KR TLL rBCD rCAD rGT rHB rKNI 
+      rKR rTLL BCD-GAIN CAD-GAIN GT-GAIN HB-GAIN KNI-GAIN KR-GAIN 
+      TLL-GAIN rBCD-GAIN rCAD-GAIN rGT-GAIN rHB-GAIN rKNI-GAIN rKR-GAIN
+      rTLL-GAIN BCD-LOSS CAD-LOSS GT-LOSS HB-LOSS KNI-LOSS KR-LOSS 
+      TLL-LOSS rBCD-LOSS rCAD-LOSS rGT-LOSS rHB-LOSS rKNI-LOSS rKR-LOSS 
+      rTLL-LOSS |
+       (compose
+         (macrostates SPACER BCD CAD GT HB KNI KR TLL rBCD rCAD rGT rHB rKNI 
+            rKR rTLL BCD-GAIN CAD-GAIN GT-GAIN HB-GAIN KNI-GAIN KR-GAIN 
+            TLL-GAIN rBCD-GAIN rCAD-GAIN rGT-GAIN rHB-GAIN rKNI-GAIN rKR-GAIN
+            rTLL-GAIN BCD-LOSS CAD-LOSS GT-LOSS HB-LOSS KNI-LOSS KR-LOSS 
+            TLL-LOSS rBCD-LOSS rCAD-LOSS rGT-LOSS rHB-LOSS rKNI-LOSS rKR-LOSS 
+            rTLL-LOSS)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|epsilon])
+         (macrotrans SPACER BCD [t|(retainP t lambda mu ratio-bcd)])
+         (macrotrans SPACER CAD [t|(retainP t lambda mu ratio-cad)])
+         (macrotrans SPACER GT [t|(retainP t lambda mu ratio-gt)])
+         (macrotrans SPACER HB [t|(retainP t lambda mu ratio-hb)])
+         (macrotrans SPACER KNI [t|(retainP t lambda mu ratio-kni)])
+         (macrotrans SPACER KR [t|(retainP t lambda mu ratio-Kr)])
+         (macrotrans SPACER TLL [t|(retainP t lambda mu ratio-tll)])
+         (macrotrans SPACER rBCD [t|(retainP t lambda mu ratio-bcd)])
+         (macrotrans SPACER rCAD [t|(retainP t lambda mu ratio-cad)])
+         (macrotrans SPACER rGT [t|(retainP t lambda mu ratio-gt)])
+         (macrotrans SPACER rHB [t|(retainP t lambda mu ratio-hb)])
+         (macrotrans SPACER rKNI [t|(retainP t lambda mu ratio-kni)])
+         (macrotrans SPACER rKR [t|(retainP t lambda mu ratio-Kr)])
+         (macrotrans SPACER rTLL [t|(retainP t lambda mu ratio-tll)])
+         (macrotrans SPACER BCD-GAIN [t|(gainP t lambda mu ratio-bcd)])
+         (macrotrans SPACER CAD-GAIN [t|(gainP t lambda mu ratio-cad)])
+         (macrotrans SPACER GT-GAIN [t|(gainP t lambda mu ratio-gt)])
+         (macrotrans SPACER HB-GAIN [t|(gainP t lambda mu ratio-hb)])
+         (macrotrans SPACER KNI-GAIN [t|(gainP t lambda mu ratio-kni)])
+         (macrotrans SPACER KR-GAIN [t|(gainP t lambda mu ratio-Kr)])
+         (macrotrans SPACER TLL-GAIN [t|(gainP t lambda mu ratio-tll)])
+         (macrotrans SPACER rBCD-GAIN [t|(gainP t lambda mu ratio-bcd)])
+         (macrotrans SPACER rCAD-GAIN [t|(gainP t lambda mu ratio-cad)])
+         (macrotrans SPACER rGT-GAIN [t|(gainP t lambda mu ratio-gt)])
+         (macrotrans SPACER rHB-GAIN [t|(gainP t lambda mu ratio-hb)])
+         (macrotrans SPACER rKNI-GAIN [t|(gainP t lambda mu ratio-kni)])
+         (macrotrans SPACER rKR-GAIN [t|(gainP t lambda mu ratio-Kr)])
+         (macrotrans SPACER rTLL-GAIN [t|(gainP t lambda mu ratio-tll)])
+         (macrotrans SPACER BCD-LOSS [t|(lossP t lambda mu ratio-bcd)])
+         (macrotrans SPACER CAD-LOSS [t|(lossP t lambda mu ratio-cad)])
+         (macrotrans SPACER GT-LOSS [t|(lossP t lambda mu ratio-gt)])
+         (macrotrans SPACER HB-LOSS [t|(lossP t lambda mu ratio-hb)])
+         (macrotrans SPACER KNI-LOSS [t|(lossP t lambda mu ratio-kni)])
+         (macrotrans SPACER KR-LOSS [t|(lossP t lambda mu ratio-Kr)])
+         (macrotrans SPACER TLL-LOSS [t|(lossP t lambda mu ratio-tll)])
+         (macrotrans SPACER rBCD-LOSS [t|(lossP t lambda mu ratio-bcd)])
+         (macrotrans SPACER rCAD-LOSS [t|(lossP t lambda mu ratio-cad)])
+         (macrotrans SPACER rGT-LOSS [t|(lossP t lambda mu ratio-gt)])
+         (macrotrans SPACER rHB-LOSS [t|(lossP t lambda mu ratio-hb)])
+         (macrotrans SPACER rKNI-LOSS [t|(lossP t lambda mu ratio-kni)])
+         (macrotrans SPACER rKR-LOSS [t|(lossP t lambda mu ratio-Kr)])
+         (macrotrans SPACER rTLL-LOSS [t|(lossP t lambda mu ratio-tll)])
+         (macrotrans BCD SPACER [t|1])
+         (macrotrans CAD SPACER [t|1])
+         (macrotrans GT SPACER [t|1])
+         (macrotrans HB SPACER [t|1])
+         (macrotrans KNI SPACER [t|1])
+         (macrotrans KR SPACER [t|1])
+         (macrotrans TLL SPACER [t|1])
+         (macrotrans rBCD SPACER [t|1])
+         (macrotrans rCAD SPACER [t|1])
+         (macrotrans rGT SPACER [t|1])
+         (macrotrans rHB SPACER [t|1])
+         (macrotrans rKNI SPACER [t|1])
+         (macrotrans rKR SPACER [t|1])
+         (macrotrans rTLL SPACER [t|1])
+         (macrotrans BCD-GAIN SPACER [t|1])
+         (macrotrans CAD-GAIN SPACER [t|1])
+         (macrotrans GT-GAIN SPACER [t|1])
+         (macrotrans HB-GAIN SPACER [t|1])
+         (macrotrans KNI-GAIN SPACER [t|1])
+         (macrotrans KR-GAIN SPACER [t|1])
+         (macrotrans TLL-GAIN SPACER [t|1])
+         (macrotrans rBCD-GAIN SPACER [t|1])
+         (macrotrans rCAD-GAIN SPACER [t|1])
+         (macrotrans rGT-GAIN SPACER [t|1])
+         (macrotrans rHB-GAIN SPACER [t|1])
+         (macrotrans rKNI-GAIN SPACER [t|1])
+         (macrotrans rKR-GAIN SPACER [t|1])
+         (macrotrans rTLL-GAIN SPACER [t|1])
+         (macrotrans BCD-LOSS SPACER [t|1])
+         (macrotrans CAD-LOSS SPACER [t|1])
+         (macrotrans GT-LOSS SPACER [t|1])
+         (macrotrans HB-LOSS SPACER [t|1])
+         (macrotrans KNI-LOSS SPACER [t|1])
+         (macrotrans KR-LOSS SPACER [t|1])
+         (macrotrans TLL-LOSS SPACER [t|1])
+         (macrotrans rBCD-LOSS SPACER [t|1])
+         (macrotrans rCAD-LOSS SPACER [t|1])
+         (macrotrans rGT-LOSS SPACER [t|1])
+         (macrotrans rHB-LOSS SPACER [t|1])
+         (macrotrans rKNI-LOSS SPACER [t|1])
+         (macrotrans rKR-LOSS SPACER [t|1])
+         (macrotrans rTLL-LOSS SPACER [t|1])
+
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         ;(retention-factor [t|(pT t lambda mu)])   ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+     (macrostate 2 bcd)
+     (macrostate 3 cad)
+     (macrostate 4 gt)
+     (macrostate 5 hb)
+     (macrostate 6 kni)
+     (macrostate 7 Kr)
+     (macrostate 8 tll)
+     (macrostate 9 bcd-rev)
+     (macrostate 10 cad-rev)
+     (macrostate 11 gt-rev)
+     (macrostate 12 hb-rev)
+     (macrostate 13 kni-rev)
+     (macrostate 14 Kr-rev)
+     (macrostate 15 tll-rev)
+     (macrostate 16 bcd-gain)
+     (macrostate 17 cad-gain)
+     (macrostate 18 gt-gain)
+     (macrostate 19 hb-gain)
+     (macrostate 20 kni-gain)
+     (macrostate 21 Kr-gain)
+     (macrostate 22 tll-gain)
+     (macrostate 23 bcd-rev-gain)
+     (macrostate 24 cad-rev-gain)
+     (macrostate 25 gt-rev-gain)
+     (macrostate 26 hb-rev-gain)
+     (macrostate 27 kni-rev-gain)
+     (macrostate 28 Kr-rev-gain)
+     (macrostate 29 tll-rev-gain)
+     (macrostate 30 bcd-loss)
+     (macrostate 31 cad-loss)
+     (macrostate 32 gt-loss)
+     (macrostate 33 hb-loss)
+     (macrostate 34 kni-loss)
+     (macrostate 35 Kr-loss)
+     (macrostate 36 tll-loss)
+     (macrostate 37 bcd-rev-loss)
+     (macrostate 38 cad-rev-loss)
+     (macrostate 39 gt-rev-loss)
+     (macrostate 40 hb-rev-loss)
+     (macrostate 41 kni-rev-loss)
+     (macrostate 42 Kr-rev-loss)
+     (macrostate 43 tll-rev-loss)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-transducer (parser lambda mu))
+
+
+

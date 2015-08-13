@@ -1,0 +1,5 @@
+(define 'alpha (* alpha 1.0)) ;0.8
+(define 'beta (* beta 1.0)) ;0.8  
+(define 'site-factor 1.0) ; rescales the substitution rate within TFBS's
+(define 'background-factor 1.0) ; rescales subst rate in the background
+(define 'tree-factor 0.3) ; for scaling branch lengths

@@ -1,0 +1,78 @@
+
+; eT(x,t) = e^(-x*t)
+(define 'eT [x t| (exp (- 0 (* x t))) ] )
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; emT(x,t) = 1-e^(-x*t)
+(define 'emT [x t| (- 1 (eT x t)) ] )
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+(define 'tkf_alpha
+  [M t|
+    (eT M t)
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+(define 'tkf_beta
+  [L M t|
+    (/ 
+      (* L (emT (- M L) t))
+      (- M (* L (eT (- M L) t)))
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+(define 'tkf_gamma
+  [L M t|
+    (- 1
+      (/
+        (* M (emT (- M L) t))
+        (* (emT M t) (- M (* L (eT (- M L) t))))
+      )
+    )
+  ]
+)
+
+;====================================================================
+; TKF(L,M,fc) builds a TKF91 model:
+;   L ("lambda") = birth rate for nucleotides
+;   M ("mu") = death rate for nucleotides
+;   fc = functional class (background)
+(define 'TKF
+  [L Mu fc| ; model parameters
+    ([M I D S1 S2 S3 S4| ; states
+;(print "lambda=")(print L)(print " mu=")(print M)(print "\n")
+       (transducer
+         (states M I D S1 S2 S3 S4)
+         (transition start-state S1 [t|1])
+         (transition S4 M [t|(tkf_alpha Mu t)])
+         (transition S4 D [t|(- 1 (tkf_alpha Mu t))])
+         (transition M S1 [t|1])
+         (transition D S2 [t|1])
+         (transition S1 I [t|(tkf_beta L Mu t)])
+         (transition S1 S3 [t|(- 1 (tkf_beta L Mu t))])
+         (transition S2 I [t|(tkf_gamma L Mu t)])
+         (transition S2 S3 [t|(- 1 (tkf_gamma L Mu t))])
+         (transition I I [t|(tkf_beta L Mu t)])
+         (transition I S3 [t|(- 1 (tkf_beta L Mu t))])
+         (transition S3 S4 [t|(/ L Mu)])
+         (transition S3 end-state [t|(- 1 (/ L Mu))])
+       )
+     ]
+     (state 1 MATCH fc) ; M
+     (state 2 INSERT fc) ; I
+     (state 3 DELETE fc) ; D
+     (state 4 SILENT fc) ; S1
+     (state 5 SILENT fc) ; S2
+     (state 6 SILENT fc) ; S3
+     (state 7 SILENT fc) ; S4
+    )
+  ]
+)
+

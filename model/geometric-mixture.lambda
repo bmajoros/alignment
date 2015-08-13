@@ -1,0 +1,122 @@
+;====================================================================
+; A reversible affine model for spacer regions between binding sites,
+; with a mixture of geometric indel models.
+; W.H. Majoros
+;====================================================================
+
+; eT(x,t) = e^(-x*t)
+(define 'eT [x t| (exp (- 0 (* x t))) ] )
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; emT(x,t) = 1-e^(-x*t)
+(define 'emT [x t| (- 1 (eT x t)) ] )
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; bINF = lim of b(t) as t->inf
+;   lambda = instantaneous birth rate
+;   mu = instantaneous death rate
+(define 'bINF [lambda mu|(/ (float lambda) (+ lambda mu))]) 
+;(define 'bINF [|(float density)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; bT(t) = binding-site "birth" probability over interval t
+;   t = interval length
+;   lambda = instantaneous birth rate
+;   mu = instantaneous death rate
+(define 'bT
+  [t lambda mu|
+    (* (bINF lambda mu) 
+      (emT (+ lambda mu) t)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; stop(t) = probability of going to stop state
+(define 'stop 
+  [t lambda mu|
+    (- 1 (* (- 1 (bINF lambda mu)) (- 1 (bT t lambda mu))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; nonstop(t,x) = x*(1-stop(t))
+(define 'nonstop
+  [t lambda mu x|
+    (* x (- 1 (stop t lambda mu)))
+  ] 
+)
+
+; nonstopG(t,x,gamma) = gamma*x*(1-stop(t))
+(define 'nonstopG
+  [t lambda mu x gamma|
+    (* gamma (* x (- 1 (stop t lambda mu))))
+  ] 
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; short(t,L,m,a,b,g) = (1-g)(1-stop(t))(1-exp(-a*t))
+(define 'short
+  [t lambda mu alpha beta gamma|
+    (* (- 1 gamma) (* (emT alpha t) (- 1 (stop t lambda mu))))
+  ]
+)
+
+;====================================================================
+; geometric-mixture(alpha,beta,beta2,gamma,L,mu,fc)
+;   alpha = tendency to stay in match state
+;   beta = tendency to stay in long insert/delete state
+;   beta2 = tendency to stay in short insert/delete state
+;   gamma = tendency to use long/short indel model
+;   L ("lambda") = instantaneous birth rate for binding sites
+;   mu = intantaneous death rate for binding sites
+;   fc = functional class (background)
+(define 'geometric-mixture
+  [alpha beta beta2 gamma L mu fc| ; model parameters
+    ([M I D I2 D2| ; states
+       (transducer
+         (states M I D I2 D2)
+         (transition start-state I [t|(* gamma (/ (emT alpha t) 2))])
+         (transition start-state D [t|(* gamma (/ (emT alpha t) 2))])
+         (transition start-state I2 [t|(* (- 1 gamma) (/ (emT alpha t) 2))])
+         (transition start-state D2 [t|(* (- 1 gamma) (/ (emT alpha t) 2))])
+         (transition start-state M [t|(eT alpha t)])
+         (transition M M [t|(nonstop t L mu (eT alpha t))])
+         (transition M I [t|(nonstopG t L mu (/ (emT alpha t) 2) gamma)])
+         (transition M D [t|(nonstopG t L mu (/ (emT alpha t) 2) gamma)])
+         (transition M I2 [t|(nonstopG t L mu (/(emT alpha t) 2) (- 1 gamma))])
+         (transition M D2 [t|(nonstopG t L mu (/(emT alpha t) 2) (- 1 gamma))])
+         (transition M end-state [t|(stop t L mu)])
+         (transition I I [t|(nonstop t L mu (emT beta t))])
+         (transition I M [t|(nonstop t L mu (* (eT beta t) (eT alpha t)))])
+         (transition I D [t|(nonstop t L mu (* (eT beta t) (emT alpha t)))])
+         (transition I end-state [t|(stop t L mu)])
+         (transition I2 I2 [t|(nonstop t L mu (emT beta2 t))])
+         (transition I2 M [t|(nonstop t L mu (* (eT beta2 t) (eT alpha t)))])
+         (transition I2 D2 [t|(nonstop t L mu (* (eT beta2 t) (emT alpha t)))])
+         (transition I2 end-state [t|(stop t L mu)])
+         (transition D D [t|(nonstop t L mu (emT beta t))])
+         (transition D M [t|(nonstop t L mu (* (eT beta t) (eT alpha t)))])
+         (transition D I [t|(nonstop t L mu (* (eT beta t) (emT alpha t)))])
+         (transition D end-state [t|(stop t L mu)])
+         (transition D2 D2 [t|(nonstop t L mu (emT beta2 t))])
+         (transition D2 M [t|(nonstop t L mu (* (eT beta2 t) (eT alpha t)))])
+         (transition D2 I2 [t|(nonstop t L mu (* (eT beta2 t) (emT alpha t)))])
+         (transition D2 end-state [t|(stop t L mu)])
+       )
+     ]
+     (state 1 MATCH fc) ; M
+     (state 2 INSERT fc) ; I
+     (state 3 DELETE fc) ; D
+     (state 4 INSERT fc) ; I2
+     (state 5 DELETE fc) ; D2
+    )
+  ]
+)
+

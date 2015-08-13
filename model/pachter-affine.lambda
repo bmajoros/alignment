@@ -1,0 +1,44 @@
+
+(define 'Beta 
+  [t lambda mu|
+    (/
+      (- 1 (exp (* (- lambda mu) t)))
+      (- mu (* lambda (exp (* (- lambda mu) t))))
+    )
+  ]
+)
+
+; Pachter's affine gap model:
+(define 'pachter
+  [lambda mu sigma fc| ; model parameters
+    ([M I D W1 W2|    ; states
+       (transducer
+         (states M I D W1 W2)
+         (transition start-state W1 [t|(- 1 (* lambda (Beta t lambda mu)))])
+         (transition start-state I [t|(* lambda (Beta t lambda mu))])
+         (transition M I [t|(* lambda (Beta t lambda mu))])
+         (transition M W1 [t|(- 1 (* lambda (Beta t lambda mu)))])
+         (transition I I [t|sigma]) ; ### not scaled by branch length?!?
+         (transition I W1 [t|(- 1 sigma)])
+         (transition D W2 [t|(/ (* sigma (* mu (Beta t lambda mu))) 
+                   (- 1 (exp (- 0 (* mu t)))))])
+         (transition D W1 [t|(/ (* (- 1 sigma) (* mu (Beta t lambda mu))) 
+                   (- 1 (exp (- 0 (* mu t)))))])
+         (transition D I [t|(- 1 (/ (* mu (Beta t lambda mu)) 
+                   (- 1 (exp (- 0 (* mu t))))))])
+         (transition W1 M [t|(/ (* (exp (- 0 (* mu t))) lambda) mu)])
+         (transition W1 D [t|(/ (* (- 1 (exp (- 0 (* mu t)))) lambda) mu)])
+         (transition W1 end-state [t|(- 1 (/ lambda mu))])
+         (transition W2 D [t|1])
+       )
+     ]
+     (state 1 MATCH fc) ; M
+     (state 2 INSERT fc) ; I
+     (state 3 DELETE fc) ; D
+     (state 4 SILENT) ; W1
+     (state 5 SILENT) ; W2
+    )
+  ]
+)
+
+

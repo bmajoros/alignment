@@ -1,0 +1,149 @@
+; Include some files
+(load "../../affine.lambda")
+(load "../../reversible.lambda")
+(load "../../pachter-affine.lambda")
+(load "../../atom.lambda") 
+(define 'fet [a b c d e|(functional-element-type a b (load-rate-matrices c e) d)])
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Model parameters
+(load "BCD-parms.lambda")
+(define 'epsilon 0.00001) ; transition to stop state
+;(define 'alpha (* alpha 1.0)) ; 0.8 is best
+;(define 'beta (* beta 1.0))    ; 0.8 is best
+(define 'site-factor 0.9) ; rescales the substitution rate within TFBS's
+(define 'background-factor 1.8) ; rescales subst rate in the background
+(define 'tree-factor 0.3) ; for scaling branch lengths
+
+(print "alpha=")(print alpha)(print "\n")
+(print "beta=")(print beta)(print "\n")
+(print "lambda=")(print lambda)(print "\n")
+(print "mu=")(print mu)(print "\n")
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define functional classes
+(define 'phy (load-phylogeny "nj.phy"))
+(scale-tree phy tree-factor)
+(define 'bg (background
+   (load-rate-matrix "background.matrix" background-factor)
+   phy "." "background"))
+(define 'fBCD (fet "bcd" "B" "bcd.ratmat" phy site-factor))
+(define 'fBCDrev (fet "-bcd" "b" "bcd-rev.ratmat" phy site-factor))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define spacer submodel
+(define 'spacer (reversible alpha beta lambda mu bg))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Define models for gain, loss, and retention
+(define 'BCD-rev (binding-site fBCDrev))
+(define 'BCD (binding-site fBCD))
+(define 'BCD-rev-gain (gain-of-function spacer fBCDrev))
+(define 'BCD-gain (gain-of-function spacer fBCD))
+(define 'BCD-rev-loss (loss-of-function spacer fBCDrev))
+(define 'BCD-loss (loss-of-function spacer fBCD))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; pT(t) = probability of survival across interval of length t
+(define 'pT
+  [t lambda mu|
+    (* (bINF lambda mu) (+ 1 (* (/ mu lambda) (eT (+ mu lambda) t))))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; qT(t) = probability of NOT surviving across interval of length t
+(define 'qT
+  [t lambda mu|
+    (- 1 (pT t lambda mu))
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; retainP(t) = probability of going into a retention submodel
+(define 'retainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (pT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.5 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; gainP(t) = probability of going into the gain submodel
+(define 'gainP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (- 1 (bINF lambda mu))) (bT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; lossP(t) = probability of going into the loss submodel
+(define 'lossP
+  [t lambda mu|
+    (/ (* (* (- 1 epsilon) (bINF lambda mu)) (qT t lambda mu))
+       (* 2 (stop t lambda mu))
+    )
+;0.9 ;###
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Combine the gain/loss/retain/spacer submodels into a macrostate topology
+(define 'parser
+  [lambda mu| ; model parameters
+    ([SPACER BCD rBCD BCD-GAIN rBCD-GAIN BCD-LOSS rBCD-LOSS |
+       (compose
+         (macrostates SPACER BCD rBCD BCD-GAIN rBCD-GAIN BCD-LOSS rBCD-LOSS)
+         (macrotrans start SPACER [t|1])
+         (macrotrans SPACER end [t|epsilon])
+         (macrotrans SPACER BCD [t|(retainP t lambda mu)])
+         (macrotrans SPACER rBCD [t|(retainP t lambda mu)])
+         (macrotrans SPACER BCD-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER rBCD-GAIN [t|(gainP t lambda mu)])
+         (macrotrans SPACER BCD-LOSS [t|(lossP t lambda mu)])
+         (macrotrans SPACER rBCD-LOSS [t|(lossP t lambda mu)])
+         (macrotrans BCD SPACER [t|1])
+         (macrotrans rBCD SPACER [t|1])
+         (macrotrans BCD-GAIN SPACER [t|1])
+         (macrotrans rBCD-GAIN SPACER [t|1])
+         (macrotrans BCD-LOSS SPACER [t|1])
+         (macrotrans rBCD-LOSS SPACER [t|1])
+
+         (gain-factor [t|(bT t lambda mu)]) ; for greedy felsenstein
+         (loss-factor [t|(qT t lambda mu)])        ; ditto
+         ;(retention-factor [t|(pT t lambda mu)])   ; ditto
+         (retention-factor [t|1])
+       )
+     ]
+     (macrostate 1 spacer)
+     (macrostate 2 BCD)
+     (macrostate 3 BCD-rev)
+     (macrostate 4 BCD-gain)
+     (macrostate 5 BCD-rev-gain)
+     (macrostate 6 BCD-loss)
+     (macrostate 7 BCD-rev-loss)
+    )
+  ]
+)
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Register the final model with the system
+(register-transducer (parser lambda mu))
+
+  

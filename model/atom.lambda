@@ -1,0 +1,14 @@
+(define 'atom
+  [fc| ; model parameters
+    ([q|  ; states
+       (transducer
+         (states q)
+	 (transition start-state q [t|1])
+	 (transition q end-state   [t|1])
+       )
+     ]
+     (state 1 MATCH fc)
+    )
+  ]
+)
+

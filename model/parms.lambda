@@ -1,0 +1,4 @@
+(define 'alpha 0.641931)
+(define 'beta 0.589826)
+(define 'lambda 0)
+(define 'mu 0.05)
