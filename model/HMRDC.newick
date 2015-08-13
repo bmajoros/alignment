@@ -1,0 +1,8 @@
+#NEXUS
+
+Begin trees;
+
+tree Phylogeny = (((human:0.0897116,canFam1:0.115091)A2:0.019659,(mm5:0.0600258,rn3:0.0652198)A1:0.0925246)A3:0.102481,galGal2:0.102481)root;
+
+End;
+
