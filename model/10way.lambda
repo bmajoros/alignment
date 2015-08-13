@@ -9,7 +9,7 @@
 (define 'epsilon 0.00001) ; transition to stop state
 (load "parms.lambda")
 (load "coef10-trained.lambda")
-(load "../../reversible.lambda")
+(load "reversible.lambda")
 
 (print "alpha=")(print alpha)(print "\n")
 (print "beta=")(print beta)(print "\n")
