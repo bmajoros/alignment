@@ -1,0 +1,8 @@
+#!/usr/bin/perl
+use strict;
+
+my $cmd="svn commit -m \"routine update\"";
+print "$cmd\n";
+system($cmd);
+
+
